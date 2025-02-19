@@ -1,97 +1,467 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>鞋墊測量系統</title>
+    <title>FootAnalyzer - 足部分析系統</title>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- 引入 Tailwind CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background-color: #f0f2f5;
-        }
-        .upload-form, .result-section {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
+        /* 共用版面樣式 */
+        .navbar {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+            background: #2d3748;
+            color: white;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            text-align: center;
-            margin-bottom: 20px;
         }
-        h1, h2 {
+
+        .main-content {
+            margin-top: 80px;
+            min-height: calc(100vh - 280px);
+        }
+
+        .tab-active {
             color: #1a73e8;
-            margin-bottom: 30px;
+            border-bottom: 2px solid #1a73e8;
         }
-        .file-input {
-            margin: 20px 0;
+
+        .upload-area {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        .submit-btn {
+
+        .btn-primary {
             background: #1a73e8;
             color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            transition: all 0.3s;
         }
-        .submit-btn:hover {
-            background: #1557b0;
+
+            .btn-primary:hover {
+                background: #1557b0;
+                transform: translateY(-1px);
+            }
+
+        .results-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
         }
-        .result-data {
-            text-align: left;
-            margin: 20px auto;
-            max-width: 400px;
+
+            .results-table th,
+            .results-table td {
+                padding: 12px;
+                text-align: left;
+                border-bottom: 1px solid #e5e7eb;
+            }
+
+            .results-table th {
+                background: #f8f9fa;
+                font-weight: 600;
+            }
+
+        .footer {
+            background: #2d3748;
+            color: white;
         }
-        .result-image {
-            max-width: 100%;
-            height: auto;
-            margin: 20px 0;
+        /* 相機、選點、loading 等相關樣式（來自第二段程式） */
+        #camera-container {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            background: #fff;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
+
+        #camera-view {
+            width: 100%;
+            height: 240px;
+            border-top-left-radius: 6px;
+            border-top-right-radius: 6px;
+            object-fit: cover;
+        }
+
+        #camera-controls {
+            text-align: center;
+            padding: 10px;
+            background: #f0f2f5;
+            border-bottom-left-radius: 6px;
+            border-bottom-right-radius: 6px;
+        }
+
+        #point-selection-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1500;
+        }
+
+            #point-selection-modal .modal-content {
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                text-align: center;
+                max-width: 90%;
+            }
     </style>
 </head>
-<body>
-    <div class="upload-form">
-        <h1>鞋墊測量系統</h1>
-        <!-- 修改 form 的 action 為 "/" -->
-        <form action="/" method="post" enctype="multipart/form-data">
-            <div class="file-input">
-                <p>請選擇鞋墊照片：</p>
-                <input type="file" name="file" accept="image/*" required>
+<body class="bg-gray-50">
+    <!-- 導覽列 -->
+    <nav class="navbar">
+        <div class="container mx-auto px-4 py-2 md:py-4 flex flex-wrap justify-between items-center">
+            <div class="text-xl font-bold">FootAnalyzer</div>
+            <div class="space-x-6">
+                <a href="#" class="text-white tab-active px-3 py-2">鞋墊測量</a>
+                <a href="#" class="text-white px-3 py-2 hover:">姆趾外翻</a>
             </div>
-            <div>
-                <input type="submit" value="上傳並分析" class="submit-btn">
+        </div>
+    </nav>
+
+    <!-- 主要內容 -->
+    <div class="main-content container mx-auto px-4">
+        <!-- 上傳區塊 -->
+        <div class="upload-area p-8 mb-8">
+            <h1 class="text-2xl font-bold text-center mb-8">鞋墊測量系統</h1>
+            <div class="flex justify-center space-x-4 mb-8">
+                <!-- 檔案上傳表單：隱藏檔案輸入，並在選取後自動送出 -->
+                <form id="uploadForm" action="/" method="post" enctype="multipart/form-data" class="flex items-center">
+                    <input type="file" name="file" accept="image/*" required class="hidden" id="fileInput" onchange="this.form.dispatchEvent(new Event('submit'))">
+                    <label for="fileInput" class="btn-primary flex items-center cursor-pointer">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        上傳圖片並分析
+                    </label>
+                </form>
+                <!-- 開啟相機 -->
+                <button type="button" onclick="openCamera()" class="btn-primary flex items-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0118.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    拍照上傳並分析
+                </button>
             </div>
-        </form>
+
+            <!-- 結果區塊 -->
+            <div id="result-section" class="mt-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <!-- 處理後圖片 -->
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="text-lg font-semibold mb-4">處理後圖片</h3>
+                        <img id="result-image" src="/api/placeholder/400/300" alt="處理後的鞋墊圖片" class="w-full rounded-lg">
+                    </div>
+                    <!-- 測量結果表格 -->
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="text-lg font-semibold mb-4">測量結果</h3>
+                        <table class="results-table">
+                            <tr>
+                                <th>測量項目</th>
+                                <th>數值</th>
+                            </tr>
+                            <tr>
+                                <td>鞋墊長度</td>
+                                <td><span id="length">-</span> cm</td>
+                            </tr>
+                            <tr>
+                                <td>前掌寬度</td>
+                                <td><span id="forefoot-width">-</span> cm</td>
+                            </tr>
+                            <tr>
+                                <td>中足寬度</td>
+                                <td><span id="midfoot-width">-</span> cm</td>
+                            </tr>
+                            <tr>
+                                <td>後跟寬度</td>
+                                <td><span id="heel-width">-</span> cm</td>
+                            </tr>
+                            <tr>
+                                <td>處理時間</td>
+                                <td><span id="processing-time">-</span> 秒</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- 加入錯誤訊息顯示 -->
-    {% if error %}
-    <div class="error-message" style="color: red; text-align: center; margin: 20px 0;">
-        {{ error }}
-    </div>
-    {% endif %}
+    <!-- 頁尾 -->
+    <footer class="footer mt-12">
+        <div class="container mx-auto px-4 py-4 md:py-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">聯絡我們</h3>
+                    <p class="mb-2">Dr.Foot 達特富科技股份有限公司</p>
+                    <p class="mb-2">TEL：+886 3 9500551</p>
+                    <p class="mb-2">客服信箱：service@drfoot.com.tw</p>
+                    <p>地址：宜蘭縣五結鄉中里路18號</p>
+                </div>
 
-    <!-- 修改結果顯示部分 -->
-    {% if result_data %}
-    <div class="result-section">
-        <h2>測量結果</h2>
-        <div class="result-data">
-            <p>鞋墊長度: {{ result_data.length_cm }} cm</p>
-            <p>前掌寬度: {{ result_data.forefoot_width_cm }} cm</p>
-            <p>中足寬度: {{ result_data.midfoot_width_cm }} cm</p>
-            <p>後跟寬度: {{ result_data.heel_width_cm }} cm</p>
-            <p>處理時間: {{ result_data.processing_time }} 秒</p>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">關注我們</h3>
+                    <div class="flex space-x-4">
+                        <a href="https://www.facebook.com/drfoot.tw" class="text-white hover:text-gray-300">Facebook</a>
+                        <a href="https://www.youtube.com/user/YilanDrFoot" class="text-white hover:text-gray-300">Youtube</a>
+                        <a href="https://drfoot-tw.blogspot.com/" class="text-white hover:text-gray-300">Blog</a>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-8 pt-8 border-t border-gray-700 text-center text-sm">
+                <p>達特富科技股份有限公司版權所有 ©Copyright 2017</p>
+            </div>
         </div>
-        
-        {% if image_url %}
-        <div class="result-image">
-            <h3>處理後圖片</h3>
-            <img src="{{ url_for('static', filename=image_url) }}" alt="處理後的鞋墊圖片">
+    </footer>
+
+    <!-- 相機區塊 -->
+    <div id="camera-container">
+        <video id="camera-view" autoplay playsinline></video>
+        <div id="camera-controls">
+            <button type="button" onclick="capturePhoto()" class="btn-primary">拍攝照片</button>
+            <button type="button" onclick="closeCamera()" class="btn-primary bg-red-600 hover:bg-red-700">關閉相機</button>
         </div>
-        {% endif %}
+        <canvas id="canvas" style="display: none;"></canvas>
     </div>
-    {% endif %}
+
+    <!-- Loading 提示 -->
+    <div id="loading-indicator" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style="display: none;">
+        <div class="bg-white p-6 rounded-lg">
+            <p class="text-lg">處理中，請稍候...</p>
+        </div>
+    </div>
+
+    <!-- 點選 A4 紙四個點的 Modal -->
+    <div id="point-selection-modal">
+        <div class="modal-content">
+            <h2 class="text-xl font-bold mb-4">請選擇A4紙的四個點</h2>
+            <canvas id="selection-canvas"></canvas>
+            <br>
+            <button id="confirm-points" class="btn-primary" disabled>確認點選</button>
+        </div>
+    </div>
+
+    <!-- JavaScript 程式碼 -->
+    <script>
+        let stream = null;
+        let selectedPoints = [];
+
+        // 開啟相機
+        async function openCamera() {
+            try {
+                if (navigator.permissions) {
+                    try {
+                        const permission = await navigator.permissions.query({ name: 'camera' });
+                        if (permission.state === 'denied') {
+                            alert('相機權限已被拒絕，請到瀏覽器設定中開啟。');
+                            return;
+                        }
+                    } catch (err) {
+                        console.warn('無法查詢相機權限，直接嘗試開啟相機...');
+                    }
+                }
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
+                });
+                const videoElement = document.getElementById('camera-view');
+                videoElement.srcObject = stream;
+                document.getElementById('camera-container').style.display = 'block';
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                alert('無法存取相機，請確認已授予相機權限。');
+            }
+        }
+
+        // 關閉相機
+        function closeCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            document.getElementById('camera-container').style.display = 'none';
+        }
+
+        // 顯示 loading 指示
+        function showLoading() {
+            document.getElementById('loading-indicator').style.display = 'flex';
+        }
+
+        // 隱藏 loading 指示
+        function hideLoading() {
+            document.getElementById('loading-indicator').style.display = 'none';
+        }
+
+        // 更新結果區塊內容
+        function updateResults(data) {
+            document.getElementById('length').textContent = data.result_data.length_cm;
+            document.getElementById('forefoot-width').textContent = data.result_data.forefoot_width_cm;
+            document.getElementById('midfoot-width').textContent = data.result_data.midfoot_width_cm;
+            document.getElementById('heel-width').textContent = data.result_data.heel_width_cm;
+            document.getElementById('processing-time').textContent = data.result_data.processing_time;
+            document.getElementById('result-image').src = `/static/${data.image_url}`;
+            document.getElementById('result-section').style.display = 'block';
+        }
+
+        // 從相機拍照並上傳圖片
+        async function capturePhoto() {
+            const video = document.getElementById('camera-view');
+            const canvas = document.getElementById('canvas');
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const context = canvas.getContext('2d');
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob(async (blob) => {
+                    const formData = new FormData();
+                    formData.append('file', blob, 'camera-capture.jpg');
+                    try {
+                        showLoading();
+                        const response = await fetch('/', {
+                            method: 'POST',
+                            body: formData,
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        });
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.success) {
+                                updateResults(data);
+                            } else {
+                                alert(data.error || '處理圖片時發生錯誤');
+                            }
+                        } else {
+                            alert('上傳圖片時發生錯誤');
+                        }
+                    } catch (err) {
+                        console.error('Error:', err);
+                        alert('上傳圖片時發生錯誤');
+                    } finally {
+                        hideLoading();
+                        closeCamera();
+                    }
+                }, 'image/jpeg', 1);
+            } else {
+                alert('請等待相機完全啟動');
+            }
+        }
+
+        // 當透過檔案上傳表單選擇圖片時（透過 submit 事件觸發）
+        document.getElementById('uploadForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            const fileInput = this.querySelector('input[type="file"]');
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const imageSrc = e.target.result;
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.getElementById('selection-canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    const scale = 0.1;  // 顯示時縮小比例
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+
+                    // 繪製縮小版圖片
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                    // 重置選點資料與按鈕狀態
+                    selectedPoints = [];
+                    document.getElementById('confirm-points').disabled = true;
+
+                    // 顯示選點 modal
+                    document.getElementById('point-selection-modal').style.display = 'flex';
+
+                    // 儲存縮放比例供後續使用
+                    window.imageScale = scale;
+                }
+                img.src = imageSrc;
+            }
+            reader.readAsDataURL(file);
+        });
+
+        // 在點選 canvas 時記錄點選位置
+        document.getElementById('selection-canvas').addEventListener('click', function (e) {
+            const canvas = this;
+            const rect = canvas.getBoundingClientRect();
+            const scale = window.imageScale;
+
+            // 取得點擊位置（基於 canvas 座標）
+            let x = e.clientX - rect.left;
+            let y = e.clientY - rect.top;
+
+            if (selectedPoints.length < 4) {
+                // 儲存還原至原始圖片比例的座標
+                selectedPoints.push({
+                    x: x / scale,
+                    y: y / scale
+                });
+
+                // 在縮小圖片上標記點
+                const ctx = canvas.getContext('2d');
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fillStyle = 'red';
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.font = "16px Arial";
+                ctx.fillText(selectedPoints.length, x - 5, y - 5);
+
+                if (selectedPoints.length === 4) {
+                    document.getElementById('confirm-points').disabled = false;
+                }
+            }
+        });
+
+        // 點選「確認點選」按鈕後上傳圖片及選點資訊
+        document.getElementById('confirm-points').addEventListener('click', function () {
+            // 隱藏選點 modal
+            document.getElementById('point-selection-modal').style.display = 'none';
+            showLoading();
+            const fileInput = document.querySelector('#uploadForm input[type="file"]');
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('points', JSON.stringify(selectedPoints));
+
+            fetch('/', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    if (data.success) {
+                        updateResults(data);
+                    } else {
+                        alert(data.error || '處理圖片時發生錯誤');
+                    }
+                })
+                .catch(err => {
+                    hideLoading();
+                    console.error('Error:', err);
+                    alert('上傳圖片時發生錯誤');
+                });
+        });
+    </script>
 </body>
 </html>
